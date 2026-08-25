@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,6 +91,48 @@ func (service *Service) Reconfigure(ctx context.Context, startPort int) (convert
 		return converter.ParseResult{}, profile.ErrNotFound
 	}
 	return service.configure(ctx, source, startPort)
+}
+
+func (service *Service) RemoveNode(ctx context.Context, index, startPort int) (converter.ParseResult, error) {
+	if service.session.IsRunning() {
+		return converter.ParseResult{}, fmt.Errorf("请先停止当前代理，再删除节点")
+	}
+	service.mu.Lock()
+	source := service.sourceTXT
+	current := service.result
+	service.mu.Unlock()
+	if source == "" || index < 0 || index >= len(current.Nodes) {
+		return converter.ParseResult{}, fmt.Errorf("选中的节点不存在")
+	}
+
+	remainingSource, err := sourceWithoutNode(current.Nodes, index)
+	if err != nil {
+		return converter.ParseResult{}, err
+	}
+	if remainingSource == "" {
+		if err := service.store.Delete(); err != nil {
+			return converter.ParseResult{}, err
+		}
+		service.mu.Lock()
+		service.sourceTXT = ""
+		service.result = converter.ParseResult{}
+		service.mu.Unlock()
+		return converter.ParseResult{}, nil
+	}
+	return service.configure(ctx, remainingSource, startPort)
+}
+
+func sourceWithoutNode(nodes []converter.Node, index int) (string, error) {
+	if index < 0 || index >= len(nodes) {
+		return "", fmt.Errorf("选中的节点不存在")
+	}
+	links := make([]string, 0, len(nodes)-1)
+	for nodeIndex, node := range nodes {
+		if nodeIndex != index {
+			links = append(links, node.RawLink)
+		}
+	}
+	return strings.Join(links, "\r\n"), nil
 }
 
 func (service *Service) Start(ctx context.Context, startPort int) (converter.ParseResult, error) {

@@ -1,6 +1,6 @@
-# Reality Local
+# Alien Local Socks5
 
-Reality Local 是一个 Windows 单文件桌面程序，将 TXT 中的 VLESS + TCP + Reality 节点转换为多个固定的本地 SOCKS5 端口，并在同一个界面中管理 Xray-core 的启动、停止、监听状态和出口 IP 检测。
+Alien Local Socks5 是一个 Windows 单文件桌面程序，将 TXT 中的 VLESS + TCP + Reality 节点转换为多个固定的本地 SOCKS5 端口，并在同一个界面中管理 Xray-core 的启动、停止、监听状态和出口 IP 检测。
 
 用户不需要操作 `xray.exe`、`config.json`、PowerShell 或启动脚本。
 
@@ -9,7 +9,7 @@ Reality Local 是一个 Windows 单文件桌面程序，将 TXT 中的 VLESS + T
 运行：
 
 ```text
-dist\Reality Local.exe
+dist\Alien Local Socks5.exe
 ```
 
 操作流程：
@@ -21,11 +21,11 @@ dist\Reality Local.exe
 5. 在 ADS 中使用表格对应的本地地址，例如 `127.0.0.1:21001`。
 6. 使用结束后点击“停止”或关闭软件。
 
-主界面只显示当前状态、本地 SOCKS5 地址、出口 IP 和最后检测时间，不显示节点名称、UUID、公钥或延迟。
+主界面只显示当前状态、本地 SOCKS5 地址、出口 IP 和最后检测时间，不显示节点名称、UUID、公钥或延迟。选择节点后可以删除对应节点和本地端口。
 
 ## 运行行为
 
-- Xray-core `v26.3.27` 已嵌入 `Reality Local.exe`。
+- Xray-core `v26.3.27` 已嵌入 `Alien Local Socks5.exe`。
 - 只监听 `127.0.0.1`。
 - 不启用 TUN、透明代理或 Windows 系统代理。
 - 不修改 V2Ray、Clash、sing-box 或其他 Xray 配置。
@@ -78,10 +78,10 @@ dist\Reality Local.exe
 构建产物：
 
 ```text
-dist\Reality Local.exe
+dist\Alien Local Socks5.exe
 dist\reality-converter.exe
 ```
 
-`reality-converter.exe` 是保留的 `v1.0.0` 独立转换器；新用户应使用 `Reality Local.exe`。
+`reality-converter.exe` 是保留的 `v1.0.0` 独立转换器；新用户应使用 `Alien Local Socks5.exe`。
 
 第三方组件信息见 `THIRD-PARTY-NOTICES.txt`。

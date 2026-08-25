@@ -1,6 +1,7 @@
 # Downloaded tools and local release artifacts may contain node credentials.
 /.tools/
 /dist/
+/.gocache/
 
 # Generated Windows resources and Go test artifacts.
 /cmd/reality-converter/rsrc_windows_*.syso

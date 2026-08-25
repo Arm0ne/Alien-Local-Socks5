@@ -7,20 +7,29 @@ $converterResourcePath = Join-Path $converterCommandDirectory "rsrc_windows_amd6
 $integratedCommandDirectory = Join-Path $projectRoot "cmd\reality-local"
 $integratedManifestPath = Join-Path $integratedCommandDirectory "reality-local.manifest"
 $integratedResourcePath = Join-Path $integratedCommandDirectory "rsrc_windows_amd64.syso"
+$iconPath = Join-Path $projectRoot "alien-icon.ico"
 $xraySourcePath = Join-Path $projectRoot ".tools\xray-v26.3.27\bin\xray.exe"
 $xrayAssetDirectory = Join-Path $projectRoot "internal\xrayruntime\assets"
 $xrayAssetPath = Join-Path $xrayAssetDirectory "xray.exe"
 $distributionDirectory = Join-Path $projectRoot "dist"
 $converterOutputPath = Join-Path $distributionDirectory "reality-converter.exe"
-$integratedOutputPath = Join-Path $distributionDirectory "Reality Local.exe"
+$integratedOutputPath = Join-Path $distributionDirectory "Alien Local Socks5.exe"
 
 Push-Location $projectRoot
 try {
-    go install github.com/akavel/rsrc@v0.10.2
     $goPath = go env GOPATH
     $resourceCompiler = Join-Path $goPath "bin\rsrc.exe"
+    if (-not (Test-Path -LiteralPath $resourceCompiler)) {
+        go install github.com/akavel/rsrc@v0.10.2
+    }
+    if (-not (Test-Path -LiteralPath $resourceCompiler)) {
+        throw "Resource compiler not found: $resourceCompiler"
+    }
     & $resourceCompiler -manifest $converterManifestPath -o $converterResourcePath
-    & $resourceCompiler -manifest $integratedManifestPath -o $integratedResourcePath
+    if (-not (Test-Path -LiteralPath $iconPath)) {
+        throw "Missing application icon: $iconPath"
+    }
+    & $resourceCompiler -manifest $integratedManifestPath -ico $iconPath -o $integratedResourcePath
 
     if (-not (Test-Path -LiteralPath $xraySourcePath)) {
         throw "Missing verified Xray executable: $xraySourcePath"
@@ -37,7 +46,7 @@ try {
     go test ./...
     New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
     go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.0.0" -o $converterOutputPath ./cmd/reality-converter
-    go build -tags integrated_xray -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.1.0" -o $integratedOutputPath ./cmd/reality-local
+    go build -tags integrated_xray -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.2.0" -o $integratedOutputPath ./cmd/reality-local
     Copy-Item -LiteralPath (Join-Path $projectRoot "THIRD-PARTY-NOTICES.txt") -Destination $distributionDirectory -Force
 
     foreach ($outputPath in $converterOutputPath, $integratedOutputPath) {

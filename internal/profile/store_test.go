@@ -37,3 +37,20 @@ func TestStoreMissing(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestStoreDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.dat")
+	store := Store{Path: path}
+	if err := store.Save("vless://sensitive-node-link", 21001); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("load after delete error = %v", err)
+	}
+	if err := store.Delete(); err != nil {
+		t.Fatalf("second delete error = %v", err)
+	}
+}

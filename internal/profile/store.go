@@ -84,6 +84,13 @@ func (store Store) Save(sourceTXT string, startPort int) error {
 	return moveReplace(temporaryPath, store.Path)
 }
 
+func (store Store) Delete() error {
+	if err := os.Remove(store.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("删除节点档案失败：%w", err)
+	}
+	return nil
+}
+
 func moveReplace(sourcePath, destinationPath string) error {
 	source, err := windows.UTF16PtrFromString(sourcePath)
 	if err != nil {

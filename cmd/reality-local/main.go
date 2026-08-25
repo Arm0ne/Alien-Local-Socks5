@@ -24,6 +24,8 @@ import (
 
 var version = "dev"
 
+const applicationName = "Alien Local Socks5"
+
 type application struct {
 	window            *walk.MainWindow
 	importButton      *walk.PushButton
@@ -32,6 +34,7 @@ type application struct {
 	detectAllButton   *walk.PushButton
 	detectOneButton   *walk.PushButton
 	copyButton        *walk.PushButton
+	deleteButton      *walk.PushButton
 	startPort         *walk.NumberEdit
 	table             *walk.TableView
 	stateLabel        *walk.Label
@@ -55,14 +58,14 @@ type application struct {
 func main() {
 	instanceHandle, err := acquireSingleInstance()
 	if err != nil {
-		walk.MsgBox(nil, "Reality Local", err.Error(), walk.MsgBoxIconInformation)
+		walk.MsgBox(nil, applicationName, err.Error(), walk.MsgBoxIconInformation)
 		return
 	}
 	defer windows.CloseHandle(instanceHandle)
 
 	service, err := appcore.New()
 	if err != nil {
-		walk.MsgBox(nil, "Reality Local", err.Error(), walk.MsgBoxIconError)
+		walk.MsgBox(nil, applicationName, err.Error(), walk.MsgBoxIconError)
 		os.Exit(1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -74,13 +77,13 @@ func main() {
 	}
 	if err := app.run(); err != nil {
 		cancel()
-		walk.MsgBox(nil, "Reality Local", err.Error(), walk.MsgBoxIconError)
+		walk.MsgBox(nil, applicationName, err.Error(), walk.MsgBoxIconError)
 		os.Exit(1)
 	}
 }
 
 func acquireSingleInstance() (windows.Handle, error) {
-	name, err := windows.UTF16PtrFromString(`Local\RealityLocal-4B59BC96-36D0-4E7B-98F4-E434E8A12713`)
+	name, err := windows.UTF16PtrFromString(`Local\AlienLocalSocks5-4B59BC96-36D0-4E7B-98F4-E434E8A12713`)
 	if err != nil {
 		return 0, err
 	}
@@ -89,7 +92,7 @@ func acquireSingleInstance() (windows.Handle, error) {
 		if handle != 0 {
 			windows.CloseHandle(handle)
 		}
-		return 0, fmt.Errorf("Reality Local 已经在运行")
+		return 0, fmt.Errorf("%s 已经在运行", applicationName)
 	}
 	if err != nil {
 		return 0, fmt.Errorf("创建软件实例失败：%w", err)
@@ -98,9 +101,16 @@ func acquireSingleInstance() (windows.Handle, error) {
 }
 
 func (app *application) run() error {
+	icon, err := walk.NewIconFromResourceId(2)
+	if err != nil {
+		return fmt.Errorf("加载应用图标失败：%w", err)
+	}
+	defer icon.Dispose()
+
 	window := MainWindow{
 		AssignTo: &app.window,
-		Title:    "Reality Local",
+		Icon:     icon,
+		Title:    applicationName,
 		Size:     Size{Width: 900, Height: 620},
 		MinSize:  Size{Width: 760, Height: 520},
 		Font:     Font{Family: "Microsoft YaHei UI", PointSize: 9},
@@ -109,7 +119,7 @@ func (app *application) run() error {
 			Composite{
 				Layout: HBox{MarginsZero: true, Spacing: 10},
 				Children: []Widget{
-					Label{Text: "Reality Local", Font: Font{Family: "Microsoft YaHei UI", PointSize: 14, Bold: true}},
+					Label{Text: applicationName, Font: Font{Family: "Microsoft YaHei UI", PointSize: 14, Bold: true}},
 					Label{AssignTo: &app.stateLabel, Text: "未导入节点", TextColor: walk.RGB(90, 90, 90)},
 					HSpacer{},
 					Label{Text: "起始端口"},
@@ -129,6 +139,7 @@ func (app *application) run() error {
 				Layout: HBox{MarginsZero: true, Spacing: 8},
 				Children: []Widget{
 					PushButton{AssignTo: &app.importButton, Text: "导入节点", MinSize: Size{Width: 96, Height: 32}, OnClicked: app.importNodes},
+					PushButton{AssignTo: &app.deleteButton, Text: "删除节点", MinSize: Size{Width: 96, Height: 32}, OnClicked: app.deleteSelected},
 					PushButton{AssignTo: &app.startButton, Text: "启动", MinSize: Size{Width: 82, Height: 32}, OnClicked: app.start},
 					PushButton{AssignTo: &app.stopButton, Text: "停止", MinSize: Size{Width: 82, Height: 32}, OnClicked: app.stop},
 					PushButton{AssignTo: &app.detectAllButton, Text: "重新检测全部", MinSize: Size{Width: 112, Height: 32}, OnClicked: app.detectAll},
@@ -159,6 +170,7 @@ func (app *application) run() error {
 				SelectionHiddenWithoutFocus: false,
 				CustomRowHeight:             30,
 				StretchFactor:               1,
+				LastColumnStretched:         true,
 				Columns: []TableViewColumn{
 					{Title: "状态", Width: 130, Alignment: AlignCenter},
 					{Title: "本地 SOCKS5", Width: 220},
@@ -239,6 +251,49 @@ func (app *application) importNodes() {
 			app.setRows(result, statusReady)
 			_ = app.stateLabel.SetText("配置就绪")
 			app.setDetail(fmt.Sprintf("已导入 %d 个 SOCKS5 端口，配置检查通过", len(result.Mappings)))
+			app.updateControls()
+		})
+	}()
+}
+
+func (app *application) deleteSelected() {
+	if !app.configured || app.running || app.busy {
+		return
+	}
+	index := app.table.CurrentIndex()
+	if index < 0 || index >= len(app.result.Nodes) || index >= len(app.result.Mappings) {
+		app.setDetail("请先选择一个节点")
+		return
+	}
+
+	answer := walk.MsgBox(app.window, applicationName,
+		fmt.Sprintf("确定删除选中的节点吗？\r\n本地 SOCKS5 端口 %d 将被移除。", app.result.Mappings[index].ListenPort),
+		walk.MsgBoxYesNo|walk.MsgBoxIconWarning)
+	if answer != 6 {
+		return
+	}
+
+	startPort := int(app.startPort.Value())
+	app.beginBusy("正在删除节点并检查配置...")
+	go func() {
+		result, err := app.service.RemoveNode(app.applicationCtx, index, startPort)
+		app.synchronize(func() {
+			app.endBusy()
+			if err != nil {
+				app.showError(err.Error())
+				return
+			}
+			app.result = result
+			app.configured = len(result.Nodes) > 0
+			app.setRows(result, statusReady)
+			_ = app.table.SetCurrentIndex(-1)
+			if app.configured {
+				_ = app.stateLabel.SetText("配置就绪")
+				app.setDetail(fmt.Sprintf("已删除节点，剩余 %d 个 SOCKS5 端口，配置检查通过", len(result.Mappings)))
+			} else {
+				_ = app.stateLabel.SetText("未导入节点")
+				app.setDetail("已删除最后一个节点")
+			}
 			app.updateControls()
 		})
 	}()
@@ -504,6 +559,7 @@ func (app *application) updateSummary() {
 
 func (app *application) updateControls() {
 	app.importButton.SetEnabled(!app.running && !app.busy)
+	app.deleteButton.SetEnabled(app.configured && !app.running && !app.busy)
 	app.startButton.SetEnabled(app.configured && !app.running && !app.busy)
 	app.stopButton.SetEnabled(app.running && !app.busy)
 	app.startPort.SetEnabled(!app.running && !app.busy)
@@ -547,7 +603,7 @@ func (app *application) setDetail(message string) {
 
 func (app *application) showError(message string) {
 	app.setDetail(message)
-	walk.MsgBox(app.window, "Reality Local", message, walk.MsgBoxIconError)
+	walk.MsgBox(app.window, applicationName, message, walk.MsgBoxIconError)
 }
 
 func (app *application) styleCell(style *walk.CellStyle) {
