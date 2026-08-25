@@ -1,0 +1,14 @@
+# Downloaded tools and local release artifacts may contain node credentials.
+/.tools/
+/dist/
+
+# Generated Windows resources and Go test artifacts.
+/cmd/reality-converter/rsrc_windows_*.syso
+*.test
+*.out
+
+# Editor and OS metadata.
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
