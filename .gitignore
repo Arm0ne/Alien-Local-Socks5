@@ -4,6 +4,8 @@
 
 # Generated Windows resources and Go test artifacts.
 /cmd/reality-converter/rsrc_windows_*.syso
+/cmd/reality-local/rsrc_windows_*.syso
+/internal/xrayruntime/assets/xray.exe
 *.test
 *.out
 

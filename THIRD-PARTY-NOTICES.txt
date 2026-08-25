@@ -1,0 +1,11 @@
+Reality Local includes Xray-core.
+
+Project: Xray-core
+Version: 26.3.27
+Source: https://github.com/XTLS/Xray-core
+Release: https://github.com/XTLS/Xray-core/releases/tag/v26.3.27
+License: Mozilla Public License 2.0
+License text: https://github.com/XTLS/Xray-core/blob/main/LICENSE
+
+The Xray-core executable embedded in Reality Local has SHA-256:
+15c2d007954ac53ba69b80ec91242786b3c0b71d52649165b4ca1d5cc96ef8f1
