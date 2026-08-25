@@ -66,6 +66,20 @@ func TestParseCommentsEncodingAliasesAndFingerprints(t *testing.T) {
 	}
 }
 
+func TestParseDefaultsOmittedVLESSEncryptionToNone(t *testing.T) {
+	link := testLink(1, func(values url.Values) {
+		values.Del("encryption")
+		values.Set("packetEncoding", "xudp")
+	})
+	result, err := ParseText(link, DefaultStartPort)
+	if err != nil {
+		t.Fatalf("ParseText returned error: %v", err)
+	}
+	if result.Nodes[0].Encryption != "none" {
+		t.Fatalf("encryption = %q, want none", result.Nodes[0].Encryption)
+	}
+}
+
 func TestParseIPv6Server(t *testing.T) {
 	link := testLink(1, nil)
 	parsed, err := url.Parse(link)
@@ -97,7 +111,7 @@ func TestParseRejectsInvalidLinks(t *testing.T) {
 		{"bad-numeric-host", replaceHost(testLink(1, nil), "999.999.999.999:443"), "服务器地址无效"},
 		{"non-tcp", testLink(1, func(v url.Values) { v.Set("type", "ws") }), "仅支持 TCP"},
 		{"non-reality", testLink(1, func(v url.Values) { v.Set("security", "tls") }), "不是 Reality"},
-		{"missing-encryption", testLink(1, func(v url.Values) { v.Del("encryption") }), "缺少 encryption"},
+		{"bad-encryption", testLink(1, func(v url.Values) { v.Set("encryption", "aes-128-gcm") }), "必须为 none"},
 		{"missing-key", testLink(1, func(v url.Values) { v.Del("pbk") }), "缺少 Reality 公钥"},
 		{"bad-key", testLink(1, func(v url.Values) { v.Set("pbk", "secret") }), "公钥格式无效"},
 		{"missing-fingerprint", testLink(1, func(v url.Values) { v.Del("fp") }), "缺少 fingerprint"},

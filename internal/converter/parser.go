@@ -63,7 +63,7 @@ func ParseText(content string, startPort int) (ParseResult, error) {
 
 	seenNodes := make(map[string]int, len(result.Nodes))
 	for _, node := range result.Nodes {
-		key := duplicateKey(node)
+		key := NodeKey(node)
 		if firstLine, exists := seenNodes[key]; exists {
 			validationErrors = append(validationErrors, ValidationError{
 				Line:    node.SourceLine,
@@ -155,14 +155,13 @@ func parseLink(raw string, lineNumber int) (Node, error) {
 		return Node{}, fmt.Errorf("仅支持 TCP，收到 %q", safeDisplay(network))
 	}
 
-	encryption, _, err := aliasValue(query, "encryption")
+	encryption, encryptionPresent, err := aliasValue(query, "encryption")
 	if err != nil {
 		return Node{}, err
 	}
-	if encryption == "" {
-		return Node{}, fmt.Errorf("缺少 encryption")
-	}
-	if !strings.EqualFold(encryption, "none") {
+	// Generic VLESS subscriptions commonly omit encryption; VLESS uses none
+	// in that case, while an explicitly supplied non-none value is rejected.
+	if encryptionPresent && encryption != "" && !strings.EqualFold(encryption, "none") {
 		return Node{}, fmt.Errorf("VLESS encryption 必须为 none")
 	}
 
@@ -330,17 +329,6 @@ func validShortID(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
-}
-
-func duplicateKey(node Node) string {
-	return strings.Join([]string{
-		strings.ToLower(node.Server),
-		strconv.Itoa(node.ServerPort),
-		strings.ToLower(node.UUID),
-		node.PublicKey,
-		strings.ToLower(node.ServerName),
-		strings.ToLower(node.ShortID),
-	}, "\x00")
 }
 
 func safeDisplay(value string) string {

@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"net"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestRecommendStartPort(t *testing.T) {
@@ -22,5 +24,19 @@ func TestRecommendStartPort(t *testing.T) {
 	}()
 	if recommendation := recommendStartPort(21001, 2); recommendation != 21201 {
 		t.Fatalf("recommendation = %d, want 21201", recommendation)
+	}
+}
+
+func TestExpiryDescriptionKeepsExpiredTimeAndWarning(t *testing.T) {
+	expired := time.Now().Add(-time.Hour)
+	text := expiryDescription(&expired, "")
+	if !strings.Contains(text, "到期 ") || !strings.Contains(text, "已过期，仅提示，仍可启动") {
+		t.Fatalf("expiry description = %q", text)
+	}
+
+	future := time.Now().Add(time.Hour)
+	text = expiryDescription(&future, "")
+	if strings.Contains(text, "已过期") || !strings.Contains(text, "到期 ") {
+		t.Fatalf("future expiry description = %q", text)
 	}
 }

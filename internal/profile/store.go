@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -14,12 +15,23 @@ import (
 
 const currentVersion = 1
 
+const (
+	SourceKindFile         = "file"
+	SourceKindSubscription = "subscription"
+)
+
 var ErrNotFound = errors.New("尚未导入节点")
 
 type Data struct {
-	Version   int    `json:"version"`
-	SourceTXT string `json:"sourceTxt"`
-	StartPort int    `json:"startPort"`
+	Version                  int    `json:"version"`
+	SourceTXT                string `json:"sourceTxt"`
+	StartPort                int    `json:"startPort"`
+	SourceKind               string `json:"sourceKind,omitempty"`
+	SubscriptionURL          string `json:"subscriptionUrl,omitempty"`
+	SubscriptionExpiresAt    int64  `json:"subscriptionExpiresAt,omitempty"`
+	SubscriptionFetchedAt    int64  `json:"subscriptionFetchedAt,omitempty"`
+	SubscriptionMetadataNote string `json:"subscriptionMetadataNote,omitempty"`
+	ListenPorts              []int  `json:"listenPorts,omitempty"`
 }
 
 type Store struct {
@@ -46,11 +58,43 @@ func (store Store) Load() (Data, error) {
 	if data.Version != currentVersion || data.SourceTXT == "" {
 		return Data{}, fmt.Errorf("节点档案版本不受支持")
 	}
+	if data.SourceKind == "" {
+		data.SourceKind = SourceKindFile
+	}
+	if data.SourceKind != SourceKindFile && data.SourceKind != SourceKindSubscription {
+		return Data{}, fmt.Errorf("节点档案来源类型不受支持")
+	}
+	if data.SourceKind == SourceKindSubscription && data.SubscriptionURL == "" {
+		return Data{}, fmt.Errorf("订阅节点档案缺少订阅地址")
+	}
 	return data, nil
 }
 
 func (store Store) Save(sourceTXT string, startPort int) error {
-	data := Data{Version: currentVersion, SourceTXT: sourceTXT, StartPort: startPort}
+	return store.SaveData(Data{Version: currentVersion, SourceTXT: sourceTXT, StartPort: startPort, SourceKind: SourceKindFile})
+}
+
+func (store Store) SaveSubscription(sourceTXT, subscriptionURL string, expiresAt, fetchedAt *time.Time, metadataNotice string, startPort int, listenPorts []int) error {
+	data := Data{
+		Version:                  currentVersion,
+		SourceTXT:                sourceTXT,
+		StartPort:                startPort,
+		SourceKind:               SourceKindSubscription,
+		SubscriptionURL:          subscriptionURL,
+		SubscriptionMetadataNote: metadataNotice,
+		ListenPorts:              append([]int(nil), listenPorts...),
+	}
+	if expiresAt != nil {
+		data.SubscriptionExpiresAt = expiresAt.Unix()
+	}
+	if fetchedAt != nil {
+		data.SubscriptionFetchedAt = fetchedAt.Unix()
+	}
+	return store.SaveData(data)
+}
+
+func (store Store) SaveData(data Data) error {
+	data.Version = currentVersion
 	plainText, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("生成节点档案失败：%w", err)

@@ -23,6 +23,10 @@ dist\Alien Local Socks5.exe
 
 主界面只显示当前状态、本地 SOCKS5 地址、出口 IP 和最后检测时间，不显示节点名称、UUID、公钥或延迟。选择节点后可以删除对应节点和本地端口。
 
+也可以在“订阅地址”输入框填入 HTTP/HTTPS 订阅地址，点击“拉取订阅”。程序会解析普通文本或 Base64 编码的 VLESS 列表，并显示节点数量和订阅到期时间；只有在确认对话框中确认后，才会替换当前节点。刷新订阅时会按节点身份尽量保留已有 SOCKS5 端口，新节点从现有端口范围之后继续分配。订阅过期只显示提示，不会禁止启动。
+
+订阅地址、到期时间、最近拉取时间和端口映射会与节点内容一起使用 Windows DPAPI 加密保存。下次打开软件会自动恢复订阅地址和端口映射。
+
 ## 运行行为
 
 - Xray-core `v26.3.27` 已嵌入 `Alien Local Socks5.exe`。
@@ -59,11 +63,14 @@ dist\Alien Local Socks5.exe
 当前仅接受 VLESS + TCP + Reality，并支持：
 
 - `type` / `network`
+- `encryption`（可省略；省略时按 VLESS `none` 处理）
 - `pbk` / `publicKey`
 - `fp` / `fingerprint`
 - `sni` / `serverName`
 - `sid` / `shortId`
 - URL 编码的 `spx` 和节点名称
+
+订阅地址必须返回 VLESS 节点列表；支持普通文本、标准或 URL-safe Base64 编码。程序直连订阅地址，不经过本地 Xray；请求超时为 30 秒，响应上限为 10 MiB，最多跟随 3 次重定向。
 
 仓库中的 `nodes.example.txt` 只用于配置格式测试，不对应可连接的真实节点。
 

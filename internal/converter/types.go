@@ -60,3 +60,14 @@ func (errs ValidationErrors) Error() string {
 func indexedTag(prefix string, index int) string {
 	return fmt.Sprintf("%s-%02d", prefix, index)
 }
+
+func NodeKey(node Node) string {
+	return strings.Join([]string{
+		strings.ToLower(node.Server),
+		fmt.Sprintf("%d", node.ServerPort),
+		strings.ToLower(node.UUID),
+		node.PublicKey,
+		strings.ToLower(node.ServerName),
+		strings.ToLower(node.ShortID),
+	}, "\x00")
+}

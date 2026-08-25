@@ -35,9 +35,12 @@ type application struct {
 	detectOneButton   *walk.PushButton
 	copyButton        *walk.PushButton
 	deleteButton      *walk.PushButton
+	fetchButton       *walk.PushButton
+	subscriptionURL   *walk.LineEdit
 	startPort         *walk.NumberEdit
 	table             *walk.TableView
 	stateLabel        *walk.Label
+	subscriptionInfo  *walk.Label
 	totalLabel        *walk.Label
 	listeningLabel    *walk.Label
 	normalLabel       *walk.Label
@@ -46,6 +49,7 @@ type application struct {
 	model             *portTableModel
 	service           *appcore.Service
 	result            converter.ParseResult
+	subscriptionDraft *appcore.SubscriptionDraft
 	configured        bool
 	running           bool
 	busy              bool
@@ -138,6 +142,21 @@ func (app *application) run() error {
 			Composite{
 				Layout: HBox{MarginsZero: true, Spacing: 8},
 				Children: []Widget{
+					Label{Text: "订阅地址", MinSize: Size{Width: 64}, TextColor: walk.RGB(90, 90, 90)},
+					LineEdit{AssignTo: &app.subscriptionURL, MinSize: Size{Height: 26}, StretchFactor: 1},
+					PushButton{AssignTo: &app.fetchButton, Text: "拉取订阅", MinSize: Size{Width: 96, Height: 30}, OnClicked: app.fetchSubscription},
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true, Spacing: 8},
+				Children: []Widget{
+					Label{AssignTo: &app.subscriptionInfo, Text: "来源：尚未导入节点", TextColor: walk.RGB(95, 95, 95)},
+					HSpacer{},
+				},
+			},
+			Composite{
+				Layout: HBox{MarginsZero: true, Spacing: 8},
+				Children: []Widget{
 					PushButton{AssignTo: &app.importButton, Text: "导入节点", MinSize: Size{Width: 96, Height: 32}, OnClicked: app.importNodes},
 					PushButton{AssignTo: &app.deleteButton, Text: "删除节点", MinSize: Size{Width: 96, Height: 32}, OnClicked: app.deleteSelected},
 					PushButton{AssignTo: &app.startButton, Text: "启动", MinSize: Size{Width: 82, Height: 32}, OnClicked: app.start},
@@ -193,6 +212,9 @@ func (app *application) run() error {
 	if err := window.Create(); err != nil {
 		return err
 	}
+	if err := app.subscriptionURL.SetCueBanner("https://example.com/subscription"); err != nil {
+		return err
+	}
 	if err := app.startPort.SetValue(converter.DefaultStartPort); err != nil {
 		app.window.Dispose()
 		return err
@@ -216,12 +238,17 @@ func (app *application) loadSavedProfile() {
 	}
 	app.result = result
 	app.configured = true
+	info := app.service.SourceInfo()
+	if info.Kind == profile.SourceKindSubscription {
+		_ = app.subscriptionURL.SetText(info.SubscriptionURL)
+	}
 	if len(result.Mappings) > 0 {
 		_ = app.startPort.SetValue(float64(result.Mappings[0].ListenPort))
 	}
 	app.setRows(result, statusReady)
 	_ = app.stateLabel.SetText("配置就绪")
 	app.setDetail(fmt.Sprintf("已加载 %d 个 SOCKS5 端口", len(result.Mappings)))
+	app.updateSourceInfo()
 	app.updateControls()
 }
 
@@ -248,9 +275,79 @@ func (app *application) importNodes() {
 			}
 			app.result = result
 			app.configured = true
+			app.subscriptionDraft = nil
+			_ = app.subscriptionURL.SetText("")
 			app.setRows(result, statusReady)
 			_ = app.stateLabel.SetText("配置就绪")
 			app.setDetail(fmt.Sprintf("已导入 %d 个 SOCKS5 端口，配置检查通过", len(result.Mappings)))
+			app.updateSourceInfo()
+			app.updateControls()
+		})
+	}()
+}
+
+func (app *application) fetchSubscription() {
+	if app.running || app.busy {
+		return
+	}
+	rawURL := strings.TrimSpace(app.subscriptionURL.Text())
+	if rawURL == "" {
+		app.showError("请先输入订阅地址")
+		return
+	}
+	startPort := int(app.startPort.Value())
+	app.beginBusy("正在拉取订阅并检查配置...")
+	go func() {
+		draft, err := app.service.FetchSubscription(app.applicationCtx, rawURL, startPort)
+		app.synchronize(func() {
+			app.endBusy()
+			if err != nil {
+				app.showError(err.Error())
+				return
+			}
+			app.subscriptionDraft = &draft
+			app.setDraftInfo(draft)
+			message := fmt.Sprintf("已拉取 %d 个节点。", len(draft.Result.Nodes))
+			if expiry := expiryDescription(draft.ExpiresAt, draft.MetadataNotice); expiry != "" {
+				message += "\r\n" + expiry
+			}
+			message += "\r\n\r\n确认替换当前节点吗？\r\n当前节点只有在确认后才会改变。"
+			answer := walk.MsgBox(app.window, applicationName, message, walk.MsgBoxYesNo|walk.MsgBoxIconQuestion)
+			if answer != 6 {
+				app.subscriptionDraft = nil
+				app.setDetail("已取消替换，当前节点未改变")
+				app.updateSourceInfo()
+				return
+			}
+			app.applySubscription(draft)
+		})
+	}()
+}
+
+func (app *application) applySubscription(draft appcore.SubscriptionDraft) {
+	if app.running || app.busy {
+		return
+	}
+	startPort := int(app.startPort.Value())
+	app.beginBusy("正在应用订阅并检查配置...")
+	go func() {
+		result, err := app.service.ApplySubscription(app.applicationCtx, draft, startPort)
+		app.synchronize(func() {
+			app.endBusy()
+			if err != nil {
+				app.showError(err.Error())
+				return
+			}
+			app.subscriptionDraft = nil
+			app.result = result
+			app.configured = true
+			if len(result.Mappings) > 0 {
+				_ = app.startPort.SetValue(float64(result.Mappings[0].ListenPort))
+			}
+			app.setRows(result, statusReady)
+			_ = app.stateLabel.SetText("配置就绪")
+			app.setDetail(fmt.Sprintf("已替换为 %d 个订阅节点，端口映射已尽量保留", len(result.Mappings)))
+			app.updateSourceInfo()
 			app.updateControls()
 		})
 	}()
@@ -285,6 +382,9 @@ func (app *application) deleteSelected() {
 			}
 			app.result = result
 			app.configured = len(result.Nodes) > 0
+			if app.configured && len(result.Mappings) > 0 {
+				_ = app.startPort.SetValue(float64(result.Mappings[0].ListenPort))
+			}
 			app.setRows(result, statusReady)
 			_ = app.table.SetCurrentIndex(-1)
 			if app.configured {
@@ -294,6 +394,7 @@ func (app *application) deleteSelected() {
 				_ = app.stateLabel.SetText("未导入节点")
 				app.setDetail("已删除最后一个节点")
 			}
+			app.updateSourceInfo()
 			app.updateControls()
 		})
 	}()
@@ -319,7 +420,8 @@ func (app *application) start() {
 			app.running = true
 			app.setRows(result, statusListening)
 			_ = app.stateLabel.SetText("运行中")
-			app.setDetail(fmt.Sprintf("已开启 %d 个 SOCKS5 端口", len(result.Mappings)))
+			app.setDetail(fmt.Sprintf("已开启 %d 个 SOCKS5 端口%s", len(result.Mappings), app.expiryWarningSuffix()))
+			app.updateSourceInfo()
 			app.updateControls()
 			app.detectAll()
 		})
@@ -567,6 +669,8 @@ func (app *application) updateControls() {
 	app.detectAllButton.SetEnabled(detectEnabled)
 	app.detectOneButton.SetEnabled(detectEnabled)
 	app.copyButton.SetEnabled(app.configured && app.table.CurrentIndex() >= 0)
+	app.fetchButton.SetEnabled(!app.running && !app.busy)
+	app.subscriptionURL.SetEnabled(!app.running && !app.busy)
 }
 
 func (app *application) beginBusy(detail string) {
@@ -599,6 +703,54 @@ func (app *application) showSelectedDetail() {
 
 func (app *application) setDetail(message string) {
 	_ = app.detailLabel.SetText(oneLine(message))
+}
+
+func (app *application) updateSourceInfo() {
+	if app.subscriptionInfo == nil {
+		return
+	}
+	info := app.service.SourceInfo()
+	if info.Kind != profile.SourceKindSubscription {
+		_ = app.subscriptionInfo.SetText("来源：本地节点文件")
+		_ = app.fetchButton.SetText("拉取订阅")
+		return
+	}
+	_ = app.fetchButton.SetText("刷新订阅")
+	text := "来源：订阅"
+	if expiry := expiryDescription(info.ExpiresAt, info.MetadataNotice); expiry != "" {
+		text += "；" + expiry
+	}
+	if info.FetchedAt != nil {
+		text += "；最近拉取 " + info.FetchedAt.Format("2006-01-02 15:04:05")
+	}
+	_ = app.subscriptionInfo.SetText(text)
+}
+
+func (app *application) setDraftInfo(draft appcore.SubscriptionDraft) {
+	text := fmt.Sprintf("待确认订阅：%d 个节点", len(draft.Result.Nodes))
+	if expiry := expiryDescription(draft.ExpiresAt, draft.MetadataNotice); expiry != "" {
+		text += "；" + expiry
+	}
+	_ = app.subscriptionInfo.SetText(text)
+}
+
+func (app *application) expiryWarningSuffix() string {
+	info := app.service.SourceInfo()
+	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
+		return "；订阅已过期，仅提示，仍可启动"
+	}
+	return ""
+}
+
+func expiryDescription(expiresAt *time.Time, notice string) string {
+	if expiresAt != nil {
+		text := "到期 " + expiresAt.Format("2006-01-02 15:04:05")
+		if expiresAt.Before(time.Now()) {
+			return text + "（已过期，仅提示，仍可启动）"
+		}
+		return text
+	}
+	return strings.TrimSpace(notice)
 }
 
 func (app *application) showError(message string) {

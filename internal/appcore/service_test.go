@@ -43,3 +43,54 @@ func TestSourceWithoutLastNodeIsEmpty(t *testing.T) {
 		t.Fatalf("source = %q, want empty", source)
 	}
 }
+
+func TestPreservePortsWhenSubscriptionOrderChanges(t *testing.T) {
+	previous := converter.ParseResult{
+		Nodes: []converter.Node{{Server: "a.example"}, {Server: "b.example"}},
+		Mappings: []converter.Mapping{
+			{Index: 1, ListenPort: 21001},
+			{Index: 2, ListenPort: 21004},
+		},
+	}
+	next := converter.ParseResult{
+		Nodes: []converter.Node{{Server: "b.example"}, {Server: "c.example"}, {Server: "a.example"}},
+		Mappings: []converter.Mapping{
+			{Index: 1, ListenPort: 21001},
+			{Index: 2, ListenPort: 21002},
+			{Index: 3, ListenPort: 21003},
+		},
+	}
+	got := preservePorts(previous, next, 21001)
+	ports := []int{got.Mappings[0].ListenPort, got.Mappings[1].ListenPort, got.Mappings[2].ListenPort}
+	want := []int{21004, 21005, 21001}
+	for index := range want {
+		if ports[index] != want[index] {
+			t.Fatalf("ports = %v, want %v", ports, want)
+		}
+		if got.Mappings[index].Index != index+1 {
+			t.Fatalf("mapping %d index = %d", index, got.Mappings[index].Index)
+		}
+	}
+}
+
+func TestPreservePortsAfterNodeRemoval(t *testing.T) {
+	previous := converter.ParseResult{
+		Nodes: []converter.Node{{Server: "a.example"}, {Server: "b.example"}, {Server: "c.example"}},
+		Mappings: []converter.Mapping{
+			{Index: 1, ListenPort: 21001},
+			{Index: 2, ListenPort: 21002},
+			{Index: 3, ListenPort: 21003},
+		},
+	}
+	next := converter.ParseResult{
+		Nodes: []converter.Node{{Server: "a.example"}, {Server: "c.example"}},
+		Mappings: []converter.Mapping{
+			{Index: 1, ListenPort: 21001},
+			{Index: 2, ListenPort: 21002},
+		},
+	}
+	got := preservePorts(previous, next, 21001)
+	if got.Mappings[0].ListenPort != 21001 || got.Mappings[1].ListenPort != 21003 {
+		t.Fatalf("ports = %d, %d, want 21001, 21003", got.Mappings[0].ListenPort, got.Mappings[1].ListenPort)
+	}
+}

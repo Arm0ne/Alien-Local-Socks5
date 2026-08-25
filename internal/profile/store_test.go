@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStoreRoundTripIsEncrypted(t *testing.T) {
@@ -28,6 +29,30 @@ func TestStoreRoundTripIsEncrypted(t *testing.T) {
 	}
 	if loaded.SourceTXT != source || loaded.StartPort != 21001 {
 		t.Fatalf("unexpected profile: %#v", loaded)
+	}
+}
+
+func TestStoreSubscriptionRoundTripPreservesMetadataAndPorts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.dat")
+	store := Store{Path: path}
+	expiresAt := time.Unix(1893456000, 0).Local()
+	fetchedAt := time.Unix(1893450000, 0).Local()
+	source := "vless://subscription-node"
+	if err := store.SaveSubscription(source, "https://example.com/sub?token=secret", &expiresAt, &fetchedAt, "订阅到期时间格式无效", 21001, []int{21001, 21004}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SourceTXT != source || loaded.SourceKind != SourceKindSubscription {
+		t.Fatalf("unexpected source: %#v", loaded)
+	}
+	if loaded.SubscriptionURL != "https://example.com/sub?token=secret" || loaded.SubscriptionExpiresAt != expiresAt.Unix() || loaded.SubscriptionFetchedAt != fetchedAt.Unix() {
+		t.Fatalf("unexpected subscription metadata: %#v", loaded)
+	}
+	if loaded.SubscriptionMetadataNote != "订阅到期时间格式无效" || len(loaded.ListenPorts) != 2 || loaded.ListenPorts[1] != 21004 {
+		t.Fatalf("unexpected ports or notice: %#v", loaded)
 	}
 }
 

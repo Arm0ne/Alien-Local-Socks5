@@ -17,7 +17,10 @@ $integratedOutputPath = Join-Path $distributionDirectory "Alien Local Socks5.exe
 
 Push-Location $projectRoot
 try {
-    $goPath = go env GOPATH
+	$goCachePath = Join-Path $projectRoot ".gocache"
+	New-Item -ItemType Directory -Force -Path $goCachePath | Out-Null
+	$env:GOCACHE = $goCachePath
+	$goPath = go env GOPATH
     $resourceCompiler = Join-Path $goPath "bin\rsrc.exe"
     if (-not (Test-Path -LiteralPath $resourceCompiler)) {
         go install github.com/akavel/rsrc@v0.10.2
@@ -42,11 +45,23 @@ try {
     New-Item -ItemType Directory -Force -Path $xrayAssetDirectory | Out-Null
     Copy-Item -LiteralPath $xraySourcePath -Destination $xrayAssetPath -Force
 
-    go mod tidy
-    go test ./...
-    New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
-    go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.0.0" -o $converterOutputPath ./cmd/reality-converter
-    go build -tags integrated_xray -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.2.0" -o $integratedOutputPath ./cmd/reality-local
+	go mod tidy
+	if ($LASTEXITCODE -ne 0) {
+		throw "go mod tidy failed with exit code $LASTEXITCODE"
+	}
+	go test ./...
+	if ($LASTEXITCODE -ne 0) {
+		throw "go test failed with exit code $LASTEXITCODE"
+	}
+	New-Item -ItemType Directory -Force -Path $distributionDirectory | Out-Null
+	go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.0.0" -o $converterOutputPath ./cmd/reality-converter
+	if ($LASTEXITCODE -ne 0) {
+		throw "reality-converter build failed with exit code $LASTEXITCODE"
+	}
+	go build -tags integrated_xray -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.3.0" -o $integratedOutputPath ./cmd/reality-local
+	if ($LASTEXITCODE -ne 0) {
+		throw "Alien Local Socks5 build failed with exit code $LASTEXITCODE"
+	}
     Copy-Item -LiteralPath (Join-Path $projectRoot "THIRD-PARTY-NOTICES.txt") -Destination $distributionDirectory -Force
 
     foreach ($outputPath in $converterOutputPath, $integratedOutputPath) {
