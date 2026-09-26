@@ -58,7 +58,7 @@ try {
 	if ($LASTEXITCODE -ne 0) {
 		throw "reality-converter build failed with exit code $LASTEXITCODE"
 	}
-	go build -tags integrated_xray -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.3.0" -o $integratedOutputPath ./cmd/reality-local
+	go build -tags integrated_xray -trimpath -ldflags "-s -w -H=windowsgui -X main.version=1.6.0" -o $integratedOutputPath ./cmd/reality-local
 	if ($LASTEXITCODE -ne 0) {
 		throw "Alien Local Socks5 build failed with exit code $LASTEXITCODE"
 	}

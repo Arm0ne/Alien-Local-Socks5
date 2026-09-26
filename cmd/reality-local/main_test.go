@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"realityconverter/internal/appcore"
+	"realityconverter/internal/profile"
 )
 
 func TestRecommendStartPort(t *testing.T) {
@@ -38,5 +41,33 @@ func TestExpiryDescriptionKeepsExpiredTimeAndWarning(t *testing.T) {
 	text = expiryDescription(&future, "")
 	if strings.Contains(text, "已过期") || !strings.Contains(text, "到期 ") {
 		t.Fatalf("future expiry description = %q", text)
+	}
+}
+
+func TestSourceDescriptionIncludesFullFilePath(t *testing.T) {
+	path := `C:\Users\Alien\Desktop\nodes\reality-list.txt`
+	got := sourceDescription(appcore.SourceInfo{Kind: profile.SourceKindFile, FilePath: path})
+	if !strings.Contains(got, path) {
+		t.Fatalf("source description = %q, want full path", got)
+	}
+	legacy := sourceDescription(appcore.SourceInfo{Kind: profile.SourceKindFile})
+	if !strings.Contains(legacy, "未记录路径") {
+		t.Fatalf("legacy source description = %q", legacy)
+	}
+}
+
+func TestSummaryCountsOfflineVerificationWithoutListener(t *testing.T) {
+	rows := []portRow{
+		{Status: statusVerified},
+		{Status: statusCheckFailed},
+		{Status: statusReady},
+	}
+	listening, normal, failed := summaryCounts(rows, false)
+	if listening != 0 || normal != 1 || failed != 1 {
+		t.Fatalf("offline summary = %d, %d, %d", listening, normal, failed)
+	}
+	listening, normal, failed = summaryCounts(rows, true)
+	if listening != 1 || normal != 1 || failed != 1 {
+		t.Fatalf("running summary = %d, %d, %d", listening, normal, failed)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"realityconverter/internal/converter"
+	"realityconverter/internal/ipcheck"
 	"realityconverter/internal/profile"
 	"realityconverter/internal/session"
 	"realityconverter/internal/subscription"
@@ -21,6 +22,7 @@ const maxInputFileBytes = 10 * 1024 * 1024
 
 type Service struct {
 	mu        sync.Mutex
+	runtimeMu sync.Mutex
 	dataDir   string
 	store     profile.Store
 	session   *session.Manager
@@ -31,6 +33,7 @@ type Service struct {
 
 type SourceInfo struct {
 	Kind            string
+	FilePath        string
 	SubscriptionURL string
 	ExpiresAt       *time.Time
 	FetchedAt       *time.Time
@@ -55,6 +58,7 @@ func New() (*Service, error) {
 		return nil, fmt.Errorf("创建软件数据目录失败：%w", err)
 	}
 	cleanupStaleConfigs(filepath.Join(dataDirectory, "session"))
+	cleanupStaleConfigs(filepath.Join(dataDirectory, "probe"))
 	return &Service{
 		dataDir: dataDirectory,
 		store:   profile.Store{Path: filepath.Join(dataDirectory, "profile.dat")},
@@ -90,18 +94,23 @@ func (service *Service) ImportFile(ctx context.Context, path string, startPort i
 	if service.session.IsRunning() {
 		return converter.ParseResult{}, fmt.Errorf("请先停止当前代理，再导入节点")
 	}
-	info, err := os.Stat(path)
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return converter.ParseResult{}, fmt.Errorf("解析节点 TXT 路径失败：%w", err)
+	}
+	absolutePath = filepath.Clean(absolutePath)
+	info, err := os.Stat(absolutePath)
 	if err != nil {
 		return converter.ParseResult{}, fmt.Errorf("读取节点 TXT 失败：%w", err)
 	}
 	if !info.Mode().IsRegular() || info.Size() > maxInputFileBytes {
 		return converter.ParseResult{}, fmt.Errorf("节点 TXT 无效或超过 10 MiB")
 	}
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(absolutePath)
 	if err != nil {
 		return converter.ParseResult{}, fmt.Errorf("读取节点 TXT 失败：%w", err)
 	}
-	return service.configure(ctx, string(content), startPort, SourceInfo{Kind: profile.SourceKindFile})
+	return service.configure(ctx, string(content), startPort, SourceInfo{Kind: profile.SourceKindFile, FilePath: absolutePath})
 }
 
 func (service *Service) FetchSubscription(ctx context.Context, rawURL string, startPort int) (SubscriptionDraft, error) {
@@ -213,6 +222,9 @@ func sourceWithoutNode(nodes []converter.Node, index int) (string, error) {
 }
 
 func (service *Service) Start(ctx context.Context, startPort int) (converter.ParseResult, error) {
+	service.runtimeMu.Lock()
+	defer service.runtimeMu.Unlock()
+
 	service.mu.Lock()
 	source := service.sourceTXT
 	current := service.result
@@ -240,6 +252,43 @@ func (service *Service) Start(ctx context.Context, startPort int) (converter.Par
 		return converter.ParseResult{}, err
 	}
 	return current, nil
+}
+
+func (service *Service) ProbeNode(ctx context.Context, index int) (address string, err error) {
+	service.runtimeMu.Lock()
+	defer service.runtimeMu.Unlock()
+
+	if service.session.IsRunning() {
+		return "", fmt.Errorf("代理运行中，请直接检测已监听端口")
+	}
+	service.mu.Lock()
+	result, resultErr := singleNodeResult(service.result, index)
+	service.mu.Unlock()
+	if resultErr != nil {
+		return "", resultErr
+	}
+	configJSON, err := converter.BuildConfig(result)
+	if err != nil {
+		return "", err
+	}
+	xrayPath, err := xrayruntime.Ensure()
+	if err != nil {
+		return "", err
+	}
+	probe := session.NewManager()
+	if err := probe.Start(ctx, xrayPath, filepath.Join(service.dataDir, "probe"), configJSON, result); err != nil {
+		return "", err
+	}
+	defer func() {
+		stopContext, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		if stopErr := probe.Stop(stopContext); stopErr != nil && err == nil {
+			address = ""
+			err = stopErr
+		}
+	}()
+
+	return (ipcheck.Checker{}).Check(ctx, result.Mappings[0].ListenPort)
 }
 
 func (service *Service) Stop(ctx context.Context) error {
@@ -278,7 +327,7 @@ func (service *Service) configureResult(ctx context.Context, source string, star
 	if info.Kind == profile.SourceKindSubscription {
 		saveErr = service.store.SaveSubscription(source, info.SubscriptionURL, info.ExpiresAt, info.FetchedAt, info.MetadataNotice, startPort, mappingPorts(result))
 	} else {
-		saveErr = service.store.Save(source, startPort)
+		saveErr = service.store.SaveFile(source, info.FilePath, startPort, mappingPorts(result))
 	}
 	if saveErr != nil {
 		return converter.ParseResult{}, saveErr
@@ -321,7 +370,7 @@ func applyStoredPorts(result converter.ParseResult, ports []int) (converter.Pars
 }
 
 func sourceInfoFromProfile(data profile.Data) SourceInfo {
-	info := SourceInfo{Kind: data.SourceKind, SubscriptionURL: data.SubscriptionURL, MetadataNotice: data.SubscriptionMetadataNote}
+	info := SourceInfo{Kind: data.SourceKind, FilePath: data.SourcePath, SubscriptionURL: data.SubscriptionURL, MetadataNotice: data.SubscriptionMetadataNote}
 	if info.Kind == "" {
 		info.Kind = profile.SourceKindFile
 	}
@@ -334,6 +383,16 @@ func sourceInfoFromProfile(data profile.Data) SourceInfo {
 		info.FetchedAt = &fetchedAt
 	}
 	return info
+}
+
+func singleNodeResult(result converter.ParseResult, index int) (converter.ParseResult, error) {
+	if index < 0 || index >= len(result.Nodes) || index >= len(result.Mappings) {
+		return converter.ParseResult{}, fmt.Errorf("选中的节点不存在")
+	}
+	return converter.ParseResult{
+		Nodes:    []converter.Node{result.Nodes[index]},
+		Mappings: []converter.Mapping{result.Mappings[index]},
+	}, nil
 }
 
 func copySourceInfo(info SourceInfo) SourceInfo {

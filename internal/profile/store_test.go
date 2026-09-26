@@ -56,6 +56,33 @@ func TestStoreSubscriptionRoundTripPreservesMetadataAndPorts(t *testing.T) {
 	}
 }
 
+func TestStoreFileRoundTripPreservesEncryptedPathAndPorts(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "profile.dat")
+	store := Store{Path: profilePath}
+	source := "vless://file-node"
+	sourcePath := filepath.Join(t.TempDir(), "private-nodes.txt")
+	if err := store.SaveFile(source, sourcePath, 21001, []int{21001, 21004}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), source) || strings.Contains(string(raw), sourcePath) {
+		t.Fatal("profile exposes plaintext source or file path")
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SourceKind != SourceKindFile || loaded.SourcePath != sourcePath {
+		t.Fatalf("unexpected file source: %#v", loaded)
+	}
+	if len(loaded.ListenPorts) != 2 || loaded.ListenPorts[0] != 21001 || loaded.ListenPorts[1] != 21004 {
+		t.Fatalf("unexpected file ports: %#v", loaded.ListenPorts)
+	}
+}
+
 func TestStoreMissing(t *testing.T) {
 	_, err := (Store{Path: filepath.Join(t.TempDir(), "missing.dat")}).Load()
 	if !errors.Is(err, ErrNotFound) {

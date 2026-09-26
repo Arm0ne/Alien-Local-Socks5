@@ -90,15 +90,24 @@ func (checker Checker) Check(ctx context.Context, port int) (string, error) {
 }
 
 func dialContext(dialer proxy.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
+		return contextDialer.DialContext
+	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		type result struct {
 			connection net.Conn
 			err        error
 		}
-		completed := make(chan result, 1)
+		completed := make(chan result)
 		go func() {
 			connection, err := dialer.Dial(network, address)
-			completed <- result{connection: connection, err: err}
+			select {
+			case completed <- result{connection: connection, err: err}:
+			case <-ctx.Done():
+				if connection != nil {
+					_ = connection.Close()
+				}
+			}
 		}()
 		select {
 		case <-ctx.Done():

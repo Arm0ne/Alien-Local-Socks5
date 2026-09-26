@@ -26,6 +26,14 @@ var version = "dev"
 
 const applicationName = "Alien Local Socks5"
 
+const (
+	toolbarButtonMinWidth = 96
+	toolbarButtonMaxWidth = 128
+	toolbarButtonHeight   = 32
+	toolbarButtonSpacing  = 8
+	toolbarMaxWidth       = toolbarButtonMaxWidth*7 + toolbarButtonSpacing*6
+)
+
 type application struct {
 	window            *walk.MainWindow
 	importButton      *walk.PushButton
@@ -40,7 +48,7 @@ type application struct {
 	startPort         *walk.NumberEdit
 	table             *walk.TableView
 	stateLabel        *walk.Label
-	subscriptionInfo  *walk.Label
+	subscriptionInfo  *walk.LineEdit
 	totalLabel        *walk.Label
 	listeningLabel    *walk.Label
 	normalLabel       *walk.Label
@@ -116,7 +124,7 @@ func (app *application) run() error {
 		Icon:     icon,
 		Title:    applicationName,
 		Size:     Size{Width: 900, Height: 620},
-		MinSize:  Size{Width: 760, Height: 520},
+		MinSize:  Size{Width: 800, Height: 520},
 		Font:     Font{Family: "Microsoft YaHei UI", PointSize: 9},
 		Layout:   VBox{Margins: Margins{Left: 16, Top: 14, Right: 16, Bottom: 12}, Spacing: 10},
 		Children: []Widget{
@@ -150,21 +158,27 @@ func (app *application) run() error {
 			Composite{
 				Layout: HBox{MarginsZero: true, Spacing: 8},
 				Children: []Widget{
-					Label{AssignTo: &app.subscriptionInfo, Text: "来源：尚未导入节点", TextColor: walk.RGB(95, 95, 95)},
-					HSpacer{},
+					Label{Text: "当前来源", MinSize: Size{Width: 64}, TextColor: walk.RGB(90, 90, 90)},
+					LineEdit{AssignTo: &app.subscriptionInfo, Text: "尚未导入节点", ReadOnly: true, MinSize: Size{Height: 26}, StretchFactor: 1},
 				},
 			},
 			Composite{
-				Layout: HBox{MarginsZero: true, Spacing: 8},
+				Layout: HBox{MarginsZero: true, SpacingZero: true, Alignment: AlignHCenterVCenter},
 				Children: []Widget{
-					PushButton{AssignTo: &app.importButton, Text: "导入节点", MinSize: Size{Width: 96, Height: 32}, OnClicked: app.importNodes},
-					PushButton{AssignTo: &app.deleteButton, Text: "删除节点", MinSize: Size{Width: 96, Height: 32}, OnClicked: app.deleteSelected},
-					PushButton{AssignTo: &app.startButton, Text: "启动", MinSize: Size{Width: 82, Height: 32}, OnClicked: app.start},
-					PushButton{AssignTo: &app.stopButton, Text: "停止", MinSize: Size{Width: 82, Height: 32}, OnClicked: app.stop},
-					PushButton{AssignTo: &app.detectAllButton, Text: "重新检测全部", MinSize: Size{Width: 112, Height: 32}, OnClicked: app.detectAll},
-					PushButton{AssignTo: &app.detectOneButton, Text: "检测选中端口", MinSize: Size{Width: 112, Height: 32}, OnClicked: app.detectSelected},
-					PushButton{AssignTo: &app.copyButton, Text: "复制代理地址", MinSize: Size{Width: 104, Height: 32}, OnClicked: app.copySelected},
-					HSpacer{},
+					Composite{
+						MaxSize:       Size{Width: toolbarMaxWidth},
+						StretchFactor: 1,
+						Layout:        Grid{Columns: 7, MarginsZero: true, Spacing: toolbarButtonSpacing},
+						Children: []Widget{
+							PushButton{AssignTo: &app.importButton, Text: "导入节点", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.importNodes},
+							PushButton{AssignTo: &app.deleteButton, Text: "删除节点", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.deleteSelected},
+							PushButton{AssignTo: &app.startButton, Text: "启动", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.start},
+							PushButton{AssignTo: &app.stopButton, Text: "停止", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.stop},
+							PushButton{AssignTo: &app.detectAllButton, Text: "重新检测全部", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.detectAll},
+							PushButton{AssignTo: &app.detectOneButton, Text: "检测选中端口", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.detectSelected},
+							PushButton{AssignTo: &app.copyButton, Text: "复制代理地址", MinSize: Size{Width: toolbarButtonMinWidth, Height: toolbarButtonHeight}, MaxSize: Size{Width: toolbarButtonMaxWidth}, StretchFactor: 1, OnClicked: app.copySelected},
+						},
+					},
 				},
 			},
 			Composite{
@@ -203,7 +217,7 @@ func (app *application) run() error {
 			Composite{
 				Layout: HBox{MarginsZero: true, Spacing: 8},
 				Children: []Widget{
-					Label{AssignTo: &app.detailLabel, Text: "等待导入节点", TextColor: walk.RGB(95, 95, 95)},
+					Label{AssignTo: &app.detailLabel, Text: "等待导入节点", MaxSize: Size{Width: 620}, TextColor: walk.RGB(95, 95, 95)},
 					HSpacer{},
 				},
 			},
@@ -302,7 +316,7 @@ func (app *application) fetchSubscription() {
 		app.synchronize(func() {
 			app.endBusy()
 			if err != nil {
-				app.showError(err.Error())
+				app.showError(subscriptionErrorMessage(err))
 				return
 			}
 			app.subscriptionDraft = &draft
@@ -494,7 +508,7 @@ func (app *application) detectAll() {
 }
 
 func (app *application) detectSelected() {
-	if !app.running || app.busy {
+	if !app.configured || app.busy {
 		return
 	}
 	index := app.table.CurrentIndex()
@@ -502,7 +516,58 @@ func (app *application) detectSelected() {
 		app.setDetail("请先选择一个 SOCKS5 端口")
 		return
 	}
+	if !app.running {
+		app.detectSelectedOffline(index)
+		return
+	}
 	app.detect([]int{index})
+}
+
+func (app *application) detectSelectedOffline(index int) {
+	app.cancelChecks()
+	ctx, cancel := context.WithCancel(app.applicationCtx)
+	app.checkCancel = cancel
+	app.model.update(index, func(item *portRow) {
+		item.Status = statusChecking
+		item.ExitIP = "检测中..."
+		item.CheckedAt = ""
+		item.Detail = "正在临时启动选中节点并检测出口 IP"
+	})
+	app.beginBusy("正在临时启动选中节点并检测出口 IP...")
+	app.updateSummary()
+
+	go func() {
+		defer cancel()
+		checkContext, cancelCheck := context.WithTimeout(ctx, 60*time.Second)
+		address, err := app.service.ProbeNode(checkContext, index)
+		cancelCheck()
+		if ctx.Err() != nil {
+			return
+		}
+		app.synchronize(func() {
+			app.checkCancel = nil
+			app.endBusy()
+			app.model.update(index, func(item *portRow) {
+				item.CheckedAt = time.Now().Format("15:04:05")
+				if err != nil {
+					var conflict session.PortConflictError
+					if errors.As(err, &conflict) {
+						item.Status = statusConflict
+					} else {
+						item.Status = statusCheckFailed
+					}
+					item.ExitIP = "未获取"
+					item.Detail = err.Error()
+					return
+				}
+				item.Status = statusVerified
+				item.ExitIP = address
+				item.Detail = "出口 IP 检测成功；临时 SOCKS5 端口已关闭"
+			})
+			app.updateSummary()
+			app.showSelectedDetail()
+		})
+	}()
 }
 
 func (app *application) detect(indexes []int) {
@@ -521,6 +586,7 @@ func (app *application) detect(indexes []int) {
 	app.setDetail(fmt.Sprintf("正在检测 %d 个出口", len(indexes)))
 
 	go func() {
+		defer cancel()
 		semaphore := make(chan struct{}, 3)
 		var waitGroup sync.WaitGroup
 		for _, index := range indexes {
@@ -564,6 +630,7 @@ func (app *application) detect(indexes []int) {
 		waitGroup.Wait()
 		if ctx.Err() == nil {
 			app.synchronize(func() {
+				app.checkCancel = nil
 				app.setDetail("出口检测完成")
 				app.updateControls()
 			})
@@ -621,6 +688,7 @@ func (app *application) setRows(result converter.ParseResult, status portStatus)
 		}
 	}
 	app.model.reset(rows)
+	_ = app.table.Invalidate()
 	app.updateSummary()
 }
 
@@ -638,25 +706,29 @@ func (app *application) setAllStatus(status portStatus, detail string) {
 
 func (app *application) updateSummary() {
 	rows := app.model.snapshot()
-	listening := 0
-	normal := 0
-	failed := 0
-	for _, row := range rows {
-		switch row.Status {
-		case statusListening, statusChecking, statusNormal, statusCheckFailed:
-			listening++
-		}
-		if row.Status == statusNormal {
-			normal++
-		}
-		if row.Status == statusCheckFailed {
-			failed++
-		}
-	}
+	listening, normal, failed := summaryCounts(rows, app.running)
 	_ = app.totalLabel.SetText(fmt.Sprintf("%d", len(rows)))
 	_ = app.listeningLabel.SetText(fmt.Sprintf("%d / %d", listening, len(rows)))
 	_ = app.normalLabel.SetText(fmt.Sprintf("%d / %d", normal, len(rows)))
 	_ = app.failedLabel.SetText(fmt.Sprintf("%d", failed))
+}
+
+func summaryCounts(rows []portRow, running bool) (listening, normal, failed int) {
+	for _, row := range rows {
+		if running {
+			switch row.Status {
+			case statusListening, statusChecking, statusNormal, statusCheckFailed:
+				listening++
+			}
+		}
+		if row.Status == statusNormal || row.Status == statusVerified {
+			normal++
+		}
+		if row.Status == statusCheckFailed || row.Status == statusConflict {
+			failed++
+		}
+	}
+	return listening, normal, failed
 }
 
 func (app *application) updateControls() {
@@ -667,7 +739,7 @@ func (app *application) updateControls() {
 	app.startPort.SetEnabled(!app.running && !app.busy)
 	detectEnabled := app.running && !app.busy
 	app.detectAllButton.SetEnabled(detectEnabled)
-	app.detectOneButton.SetEnabled(detectEnabled)
+	app.detectOneButton.SetEnabled(app.configured && !app.busy)
 	app.copyButton.SetEnabled(app.configured && app.table.CurrentIndex() >= 0)
 	app.fetchButton.SetEnabled(!app.running && !app.busy)
 	app.subscriptionURL.SetEnabled(!app.running && !app.busy)
@@ -702,7 +774,7 @@ func (app *application) showSelectedDetail() {
 }
 
 func (app *application) setDetail(message string) {
-	_ = app.detailLabel.SetText(oneLine(message))
+	_ = app.detailLabel.SetText(statusLine(message))
 }
 
 func (app *application) updateSourceInfo() {
@@ -710,20 +782,33 @@ func (app *application) updateSourceInfo() {
 		return
 	}
 	info := app.service.SourceInfo()
+	_ = app.subscriptionInfo.SetText(sourceDescription(info))
 	if info.Kind != profile.SourceKindSubscription {
-		_ = app.subscriptionInfo.SetText("来源：本地节点文件")
 		_ = app.fetchButton.SetText("拉取订阅")
 		return
 	}
 	_ = app.fetchButton.SetText("刷新订阅")
-	text := "来源：订阅"
-	if expiry := expiryDescription(info.ExpiresAt, info.MetadataNotice); expiry != "" {
-		text += "；" + expiry
+}
+
+func sourceDescription(info appcore.SourceInfo) string {
+	switch info.Kind {
+	case profile.SourceKindFile:
+		if info.FilePath == "" {
+			return "本地节点文件：旧版本未记录路径，请重新导入"
+		}
+		return "本地节点文件：" + info.FilePath
+	case profile.SourceKindSubscription:
+		text := "订阅"
+		if expiry := expiryDescription(info.ExpiresAt, info.MetadataNotice); expiry != "" {
+			text += "；" + expiry
+		}
+		if info.FetchedAt != nil {
+			text += "；最近拉取 " + info.FetchedAt.Format("2006-01-02 15:04:05")
+		}
+		return text
+	default:
+		return "尚未导入节点"
 	}
-	if info.FetchedAt != nil {
-		text += "；最近拉取 " + info.FetchedAt.Format("2006-01-02 15:04:05")
-	}
-	_ = app.subscriptionInfo.SetText(text)
 }
 
 func (app *application) setDraftInfo(draft appcore.SubscriptionDraft) {
@@ -767,7 +852,7 @@ func (app *application) styleCell(style *walk.CellStyle) {
 		return
 	}
 	switch row.Status {
-	case statusNormal:
+	case statusNormal, statusVerified:
 		style.TextColor = walk.RGB(20, 125, 70)
 	case statusCheckFailed, statusConflict:
 		style.TextColor = walk.RGB(190, 55, 45)
@@ -838,6 +923,50 @@ func oneLine(message string) string {
 		return string(runes[:240]) + "..."
 	}
 	return message
+}
+
+// The footer label participates in the window's minimum size calculation.
+// Keep its content short even when the error dialog contains several lines.
+func statusLine(message string) string {
+	return truncateRunes(oneLine(message), 48)
+}
+
+func subscriptionErrorMessage(err error) string {
+	var validationErrors converter.ValidationErrors
+	if !errors.As(err, &validationErrors) || len(validationErrors) == 0 {
+		return err.Error()
+	}
+
+	const shownErrors = 4
+	var message strings.Builder
+	fmt.Fprintf(&message, "订阅节点解析失败：共 %d 项错误。", len(validationErrors))
+	for index, item := range validationErrors {
+		if index >= shownErrors {
+			break
+		}
+		reason := item.Message
+		// A URL parser error may embed the entire input link, including credentials.
+		if strings.Contains(strings.ToLower(reason), "vless://") {
+			reason = "链接格式无效（原始链接已隐藏）"
+		}
+		if item.Line > 0 {
+			fmt.Fprintf(&message, "\r\n第 %d 行：%s", item.Line, truncateRunes(reason, 72))
+		} else {
+			fmt.Fprintf(&message, "\r\n%s", truncateRunes(reason, 72))
+		}
+	}
+	if remaining := len(validationErrors) - shownErrors; remaining > 0 {
+		fmt.Fprintf(&message, "\r\n其余 %d 项未显示。", remaining)
+	}
+	return message.String()
+}
+
+func truncateRunes(message string, max int) string {
+	runes := []rune(message)
+	if len(runes) <= max {
+		return message
+	}
+	return string(runes[:max-3]) + "..."
 }
 
 func defaultImportDirectory() string {

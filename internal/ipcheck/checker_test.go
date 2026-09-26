@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -45,6 +46,33 @@ func TestCheckerRejectsInvalidResponse(t *testing.T) {
 	if _, err := (Checker{Endpoints: []string{web.URL}, Timeout: 3 * time.Second}).Check(context.Background(), port); err == nil {
 		t.Fatal("expected invalid response error")
 	}
+}
+
+func TestDialContextUsesContextAwareDialer(t *testing.T) {
+	dialer := &blockingContextDialer{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := dialContext(dialer)(ctx, "tcp", "example.com:443")
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("dial error = %v", err)
+	}
+	if !dialer.contextCalled {
+		t.Fatal("DialContext was not used")
+	}
+}
+
+type blockingContextDialer struct {
+	contextCalled bool
+}
+
+func (dialer *blockingContextDialer) Dial(string, string) (net.Conn, error) {
+	return nil, fmt.Errorf("Dial should not be called")
+}
+
+func (dialer *blockingContextDialer) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+	dialer.contextCalled = true
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 func startSOCKSServer(t *testing.T) (string, func()) {

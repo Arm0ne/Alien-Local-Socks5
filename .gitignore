@@ -2,6 +2,7 @@
 /.tools/
 /dist/
 /.gocache/
+/最终成品/
 
 # Generated Windows resources and Go test artifacts.
 /cmd/reality-converter/rsrc_windows_*.syso

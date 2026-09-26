@@ -14,6 +14,7 @@ const (
 	statusListening   portStatus = "已监听"
 	statusChecking    portStatus = "正在检测"
 	statusNormal      portStatus = "正常"
+	statusVerified    portStatus = "检测通过（未启动）"
 	statusCheckFailed portStatus = "检测失败"
 	statusConflict    portStatus = "端口冲突"
 	statusStopped     portStatus = "已停止"
@@ -63,6 +64,11 @@ func (model *portTableModel) reset(rows []portRow) {
 	model.rows = append([]portRow(nil), rows...)
 	model.mu.Unlock()
 	model.PublishRowsReset()
+	if len(rows) > 0 {
+		// Walk does not reliably repaint a virtual table when a reset keeps the
+		// same row count, so explicitly invalidate the replaced row range.
+		model.PublishRowsChanged(0, len(rows)-1)
+	}
 }
 
 func (model *portTableModel) update(index int, update func(*portRow)) {

@@ -27,6 +27,7 @@ type Data struct {
 	SourceTXT                string `json:"sourceTxt"`
 	StartPort                int    `json:"startPort"`
 	SourceKind               string `json:"sourceKind,omitempty"`
+	SourcePath               string `json:"sourcePath,omitempty"`
 	SubscriptionURL          string `json:"subscriptionUrl,omitempty"`
 	SubscriptionExpiresAt    int64  `json:"subscriptionExpiresAt,omitempty"`
 	SubscriptionFetchedAt    int64  `json:"subscriptionFetchedAt,omitempty"`
@@ -71,7 +72,18 @@ func (store Store) Load() (Data, error) {
 }
 
 func (store Store) Save(sourceTXT string, startPort int) error {
-	return store.SaveData(Data{Version: currentVersion, SourceTXT: sourceTXT, StartPort: startPort, SourceKind: SourceKindFile})
+	return store.SaveFile(sourceTXT, "", startPort, nil)
+}
+
+func (store Store) SaveFile(sourceTXT, sourcePath string, startPort int, listenPorts []int) error {
+	return store.SaveData(Data{
+		Version:     currentVersion,
+		SourceTXT:   sourceTXT,
+		StartPort:   startPort,
+		SourceKind:  SourceKindFile,
+		SourcePath:  sourcePath,
+		ListenPorts: append([]int(nil), listenPorts...),
+	})
 }
 
 func (store Store) SaveSubscription(sourceTXT, subscriptionURL string, expiresAt, fetchedAt *time.Time, metadataNotice string, startPort int, listenPorts []int) error {
