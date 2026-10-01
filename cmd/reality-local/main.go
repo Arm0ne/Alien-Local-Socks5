@@ -54,6 +54,7 @@ type application struct {
 	normalLabel       *walk.Label
 	failedLabel       *walk.Label
 	detailLabel       *walk.Label
+	notifyIcon        *walk.NotifyIcon
 	model             *portTableModel
 	service           *appcore.Service
 	result            converter.ParseResult
@@ -62,6 +63,7 @@ type application struct {
 	running           bool
 	busy              bool
 	closing           bool
+	exitRequested     bool
 	checkCancel       context.CancelFunc
 	applicationCtx    context.Context
 	applicationCancel context.CancelFunc
@@ -225,6 +227,48 @@ func (app *application) run() error {
 	}
 	if err := window.Create(); err != nil {
 		return err
+	}
+	notifyIcon, err := walk.NewNotifyIcon(app.window)
+	if err != nil {
+		app.window.Dispose()
+		return fmt.Errorf("创建系统托盘图标失败：%w", err)
+	}
+	app.notifyIcon = notifyIcon
+	defer func() {
+		_ = notifyIcon.Dispose()
+	}()
+	if err := notifyIcon.SetIcon(icon); err != nil {
+		return fmt.Errorf("设置系统托盘图标失败：%w", err)
+	}
+	if err := notifyIcon.SetToolTip(applicationName + "（后台运行中）"); err != nil {
+		return fmt.Errorf("设置系统托盘提示失败：%w", err)
+	}
+	notifyIcon.MouseDown().Attach(func(_, _ int, button walk.MouseButton) {
+		if button == walk.LeftButton {
+			app.showFromTray()
+		}
+	})
+	showAction := walk.NewAction()
+	if err := showAction.SetText("显示主界面"); err != nil {
+		return fmt.Errorf("创建托盘菜单失败：%w", err)
+	}
+	showAction.Triggered().Attach(app.showFromTray)
+	if err := notifyIcon.ContextMenu().Actions().Add(showAction); err != nil {
+		return fmt.Errorf("添加托盘菜单失败：%w", err)
+	}
+	if err := notifyIcon.ContextMenu().Actions().Add(walk.NewSeparatorAction()); err != nil {
+		return fmt.Errorf("添加托盘菜单分隔线失败：%w", err)
+	}
+	exitAction := walk.NewAction()
+	if err := exitAction.SetText("退出程序"); err != nil {
+		return fmt.Errorf("创建退出菜单失败：%w", err)
+	}
+	exitAction.Triggered().Attach(app.exitFromTray)
+	if err := notifyIcon.ContextMenu().Actions().Add(exitAction); err != nil {
+		return fmt.Errorf("添加退出菜单失败：%w", err)
+	}
+	if err := notifyIcon.SetVisible(true); err != nil {
+		return fmt.Errorf("显示系统托盘图标失败：%w", err)
 	}
 	if err := app.subscriptionURL.SetCueBanner("https://example.com/subscription"); err != nil {
 		return err
@@ -867,6 +911,12 @@ func (app *application) onClosing(canceled *bool, _ walk.CloseReason) {
 	if app.closing {
 		return
 	}
+	if !app.exitRequested {
+		*canceled = true
+		app.window.Hide()
+		app.setDetail("已隐藏到系统托盘；右键托盘图标可退出程序")
+		return
+	}
 	app.closing = true
 	app.cancelChecks()
 	app.applicationCancel()
@@ -875,6 +925,26 @@ func (app *application) onClosing(canceled *bool, _ walk.CloseReason) {
 		_ = app.service.Stop(stopContext)
 		cancel()
 	}
+}
+
+func (app *application) showFromTray() {
+	if app.closing || app.window == nil {
+		return
+	}
+	app.window.Show()
+	_ = app.window.Activate()
+}
+
+func (app *application) exitFromTray() {
+	if app.closing || app.window == nil {
+		return
+	}
+	app.exitRequested = true
+	if app.notifyIcon != nil {
+		_ = app.notifyIcon.Dispose()
+		app.notifyIcon = nil
+	}
+	_ = app.window.Close()
 }
 
 func (app *application) synchronize(callback func()) {
